@@ -1,42 +1,149 @@
-# AppaPDF - Modern PDF Reader & AI Assistant
+# 📄 AppaPDF – Modern PDF Reader & AI Assistant
 
-AppaPDF is a high-performance, eye-catching PDF reader application built with Flutter. It combines traditional PDF management with modern AI capabilities to provide a seamless reading experience.
+AppaPDF is a fast, modern, and visually polished **PDF reader application built with Flutter**.
+It combines powerful document management with **AI-powered assistance** to create a smarter reading experience.
+
+---
 
 ## 🚀 Features
 
-- **Advanced PDF Viewing**: Smooth scrolling, page overview, night mode, and brightness control.
-- **Smart AI Chat**: Integration with Google Gemini to ask questions about your documents (requires API key).
-- **Document Scanner**: Scan physical documents directly into PDF format.
-- **PDF Merging**: Combine multiple PDF files into a single document.
-- **Library Management**: Organize, search, and manage all your PDF files in one place.
-- **Recent Files**: Quick access to your most recently opened documents with pinning functionality.
+* 📖 **Advanced PDF Reader**
+  Smooth scrolling, page overview, night mode, and brightness control for comfortable reading.
+
+* 🤖 **AI Document Assistant**
+  Ask questions about your PDFs using **Google Gemini AI** (API key required).
+
+* 📷 **Document Scanner**
+  Scan physical documents and instantly convert them into PDFs.
+
+* 🔗 **PDF Merger**
+  Combine multiple PDF files into a single document.
+
+* 📚 **Smart Library Management**
+  Organize, search, and manage all your PDFs in one place.
+
+* 🕒 **Recent Files Access**
+  Quickly open recently viewed documents with pin support.
+
+---
 
 ## 🛠 Tech Stack
 
-- **Framework**: [Flutter](https://flutter.dev)
-- **State Management**: [Provider](https://pub.dev/packages/provider) for scalable state handling.
-- **Navigation**: [GoRouter](https://pub.dev/packages/go_router) for declarative routing.
-- **Animations**: [Flutter Animate](https://pub.dev/packages/flutter_animate) for a polished UI.
-- **AI Engine**: [Google Generative AI (Gemini)](https://pub.dev/packages/google_generative_ai).
-- **PDF Handling**: `flutter_pdfview`, `pdf`, and `printing`.
+| Technology                    | Purpose                     |
+| ----------------------------- | --------------------------- |
+| Flutter                       | Cross-platform UI framework |
+| Provider                      | State management            |
+| GoRouter                      | Navigation and routing      |
+| Flutter Animate               | Smooth UI animations        |
+| Google Generative AI (Gemini) | AI assistant                |
+| flutter_pdfview               | PDF rendering               |
+| pdf & printing                | PDF creation and printing   |
+
+---
 
 ## 🎨 Design System
 
-- **Theming**: Full support for Light and Dark modes using a modular `AppTheme`.
-- **Typography**: Plus Jakarta Sans for a modern, professional look.
-- **UX**: Intuitive dashboard with quick actions and a clean, card-based layout.
+* 🌗 **Light & Dark Mode Support**
+* 🔤 **Plus Jakarta Sans Typography**
+* 🧭 **Clean Card-Based UI**
+* ⚡ **Smooth Animations**
 
-## 📥 Getting Started
+---
 
-1.  **Clone the repo**: `git clone https://github.com/yourusername/appa_pdf.git`
-2.  **Install dependencies**: `flutter pub get`
-3.  **Run the app**: `flutter run`
-4.  **AI Config**: To use the AI features, enter your Gemini API key in the AI Chat settings within the app.
+## 📸 Screenshots
+
+*Add your screenshots here*
+
+```
+screenshots/
+  dashboard.png
+  reader.png
+  ai_chat.png
+```
+
+Example:
+
+```
+![Dashboard](screenshots/dashboard.png)
+![Reader](screenshots/reader.png)
+```
+
+---
+
+## 📦 Installation
+
+Clone the repository
+
+```
+git clone https://github.com/MdKhanBahadurSadi/appa_pdf.git
+```
+
+Navigate into the project folder
+
+```
+cd appa_pdf
+```
+
+Install dependencies
+
+```
+flutter pub get
+```
+
+Run the application
+
+```
+flutter run
+```
+
+---
+
+## 🤖 AI Configuration
+
+To use the AI assistant:
+
+1. Get a **Google Gemini API key**
+2. Open the AI Chat settings inside the app
+3. Enter your API key
+
+---
+
+## 📂 Project Structure
+
+```
+lib/
+  core/
+  features/
+  screens/
+  widgets/
+
+android/
+ios/
+web/
+assets/
+test/
+```
+
+---
 
 ## 🧪 Testing
 
-The project includes unit and widget tests to ensure stability. Run them using:
-`flutter test`
+Run unit and widget tests:
+
+```
+flutter test
+```
 
 ---
-Built with ❤️ for a better reading experience.
+
+## 📜 License
+
+This project is licensed under the **MIT License**.
+
+---
+
+## ❤️ Author
+
+**Md. Khan Bahadur Sadi**
+
+Built with Flutter to create a smarter PDF reading experience.
