@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>AppaPDF requires camera access to scan documents into PDF.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>AppaPDF requires photo library access to import images.</string>
 </dict>
 </plist>

@@ -3,6 +3,7 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../services/pdf_ai_service.dart';
 
 class AiChatScreen extends StatefulWidget {
   final String? filePath;
@@ -17,17 +18,36 @@ class _AiChatScreenState extends State<AiChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
   String? _apiKey;
+  String? _documentText;
 
   @override
   void initState() {
     super.initState();
-    _loadApiKey();
-    // Adding dummy data for now
-    _messages.addAll([
-      {'role': 'ai', 'text': 'Hello! I am your Smart AI assistant. How can I help you with your PDFs today?'},
-      {'role': 'user', 'text': 'Can you summarize a PDF for me?'},
-      {'role': 'ai', 'text': 'Yes, I can! Just upload a PDF and ask me anything about it. Currently, I am running in demo mode with dummy data.'},
-    ]);
+    _initializeChat();
+  }
+
+  Future<void> _initializeChat() async {
+    await _loadApiKey();
+    if (widget.filePath != null && _apiKey != null && _apiKey!.isNotEmpty) {
+      _extractDocumentText();
+    }
+    
+    // Initial welcome message
+    setState(() {
+      _messages.add({'role': 'ai', 'text': 'Hello! I am your Smart AI assistant. How can I help you with your PDFs today?'});
+    });
+  }
+
+  Future<void> _extractDocumentText() async {
+    try {
+      final service = PdfAiService(apiKey: _apiKey!);
+      final text = await service.extractTextFromPdf(widget.filePath!);
+      setState(() {
+        _documentText = text;
+      });
+    } catch (e) {
+      debugPrint('Error extracting text for chat: $e');
+    }
   }
 
   Future<void> _loadApiKey() async {
@@ -71,9 +91,16 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
     try {
       final model = GenerativeModel(model: 'gemini-1.5-flash', apiKey: _apiKey!);
-      final prompt = widget.filePath != null 
-          ? "Context: User is reading a PDF file at ${widget.filePath}. Question: $userText"
-          : userText;
+      
+      String prompt = userText;
+      if (widget.filePath != null) {
+        if (_documentText != null) {
+          // Providing the extracted text as context
+          prompt = "Context from PDF document:\n$_documentText\n\nUser Question: $userText\n\nPlease answer the question based on the provided PDF context.";
+        } else {
+          prompt = "Context: User is reading a PDF file at ${widget.filePath}. Question: $userText";
+        }
+      }
       
       final content = [Content.text(prompt)];
       final response = await model.generateContent(content);
@@ -115,10 +142,16 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 isScrollControlled: true,
                 builder: (context) => Padding(
                   padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-                  child: _ApiKeyConfigView(onSave: (key) {
-                    _saveApiKey(key);
-                    Navigator.pop(context);
-                  }),
+                  child: _ApiKeyConfigView(
+                    currentKey: _apiKey ?? '',
+                    onSave: (key) {
+                      _saveApiKey(key);
+                      if (widget.filePath != null && _documentText == null) {
+                        _extractDocumentText();
+                      }
+                      Navigator.pop(context);
+                    },
+                  ),
                 ),
               );
             },
@@ -201,15 +234,28 @@ class _AiChatScreenState extends State<AiChatScreen> {
 }
 
 class _ApiKeyConfigView extends StatefulWidget {
+  final String currentKey;
   final Function(String) onSave;
-  const _ApiKeyConfigView({required this.onSave});
+  const _ApiKeyConfigView({required this.onSave, required this.currentKey});
 
   @override
   State<_ApiKeyConfigView> createState() => _ApiKeyConfigViewState();
 }
 
 class _ApiKeyConfigViewState extends State<_ApiKeyConfigView> {
-  final TextEditingController _keyController = TextEditingController();
+  late final TextEditingController _keyController;
+
+  @override
+  void initState() {
+    super.initState();
+    _keyController = TextEditingController(text: widget.currentKey);
+  }
+
+  @override
+  void dispose() {
+    _keyController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

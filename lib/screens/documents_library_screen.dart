@@ -5,6 +5,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../services/recent_files_service.dart';
+import '../providers/file_provider.dart';
 
 class DocumentsLibraryScreen extends StatefulWidget {
   const DocumentsLibraryScreen({super.key});
@@ -16,6 +19,7 @@ class DocumentsLibraryScreen extends StatefulWidget {
 class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
   List<File> _pdfFiles = [];
   List<File> _filteredFiles = [];
+  Map<String, String> _fileSizes = {};
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
 
@@ -36,15 +40,22 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
     setState(() => _isLoading = true);
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final List<FileSystemEntity> entities = directory.listSync();
+      final List<FileSystemEntity> entities = await directory.list().toList();
       final List<File> files = entities
           .whereType<File>()
           .where((file) => p.extension(file.path).toLowerCase() == '.pdf')
           .toList();
+
+      final Map<String, String> sizes = {};
+      for (var file in files) {
+        final length = await file.length();
+        sizes[file.path] = (length / (1024 * 1024)).toStringAsFixed(2);
+      }
       
       setState(() {
         _pdfFiles = files;
         _filteredFiles = files;
+        _fileSizes = sizes;
         _isLoading = false;
       });
     } catch (e) {
@@ -65,8 +76,15 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
   Future<void> _deleteFile(File file) async {
     try {
       await file.delete();
+      await RecentFilesService.removeRecentFile(file.path);
+      
+      if (mounted) {
+        context.read<FileProvider>().loadRecentFiles();
+      }
+
       setState(() {
         _pdfFiles.removeWhere((f) => f.path == file.path);
+        _fileSizes.remove(file.path);
         _filterFiles();
       });
       if (mounted) {
@@ -131,8 +149,7 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
                   itemBuilder: (context, index) {
                     final file = _filteredFiles[index];
                     final fileName = p.basename(file.path);
-                    final fileSizeInBytes = file.lengthSync();
-                    final fileSize = (fileSizeInBytes / (1024 * 1024)).toStringAsFixed(2);
+                    final fileSize = _fileSizes[file.path] ?? '0.00';
 
                     return Dismissible(
                       key: Key(file.path),

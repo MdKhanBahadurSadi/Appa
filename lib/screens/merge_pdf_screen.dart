@@ -5,8 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:path/path.dart' as p;
 import 'package:go_router/go_router.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
+import '../services/pdf_merge_service.dart';
+import '../services/recent_files_service.dart';
 
 class MergePdfScreen extends StatefulWidget {
   const MergePdfScreen({super.key});
@@ -57,25 +58,28 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
     setState(() => _isMerging = true);
 
     try {
-      final pdf = pw.Document();
-      for (var file in _selectedFiles) {
-        pdf.addPage(
-          pw.Page(
-            build: (pw.Context context) => pw.Center(
-              child: pw.Text("Merged Content from: ${p.basename(file.path)}"),
-            ),
-          ),
-        );
+      final mergedPath = await PdfMergeService.mergePdfs(_selectedFiles.map((f) => f.path).toList());
+
+      if (mergedPath == null) {
+        _showError('Merging failed');
+        return;
       }
 
-      final output = await getApplicationDocumentsDirectory();
-      final fileName = "merged_${DateTime.now().millisecondsSinceEpoch}.pdf";
-      final file = File("${output.path}/$fileName");
-      await file.writeAsBytes(await pdf.save());
+      final file = File(mergedPath);
+      final fileName = p.basename(mergedPath);
+      final size = (await file.length() / (1024 * 1024)).toStringAsFixed(2) + " MB";
+      final date = DateFormat('MMM dd, yyyy').format(DateTime.now());
+
+      await RecentFilesService.addRecentFile(RecentFile(
+        path: mergedPath,
+        name: fileName,
+        date: date,
+        size: size,
+      ));
 
       if (!mounted) return;
       context.pushReplacement('/pdf-viewer', extra: {
-        'path': file.path,
+        'path': mergedPath,
         'fileName': fileName,
       });
     } catch (e) {

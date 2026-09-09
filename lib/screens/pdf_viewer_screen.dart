@@ -6,11 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/recent_files_service.dart';
-import '../providers/file_provider.dart';
 import '../services/pdf_ai_service.dart';
 
 class PDFViewerScreen extends StatefulWidget {
@@ -46,7 +44,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
     try {
       final file = File(widget.path);
       if (await file.exists()) {
-        final size = (await file.length() / (1024 * 1024)).toStringAsFixed(2) + " MB";
+        final size = "${(await file.length() / (1024 * 1024)).toStringAsFixed(2)} MB";
         final date = DateFormat('MMM dd, yyyy').format(DateTime.now());
         await RecentFilesService.addRecentFile(RecentFile(
           path: widget.path,
@@ -184,6 +182,13 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
               onError: (error) => _showError('Error loading PDF: ${error.toString()}'),
             ),
             
+            // Brightness Overlay
+            IgnorePointer(
+              child: Container(
+                color: Colors.black.withValues(alpha: (1.0 - _brightness).clamp(0.0, 0.8)),
+              ),
+            ),
+            
             if (!_pdfReady)
               const Center(child: CircularProgressIndicator(strokeWidth: 2)),
 
@@ -268,7 +273,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
   void _showDocInfo() async {
     try {
       final file = File(widget.path);
-      final size = (await file.length() / (1024 * 1024)).toStringAsFixed(2) + " MB";
+      final size = "${(await file.length() / (1024 * 1024)).toStringAsFixed(2)} MB";
       if (!mounted) return;
       showDialog(
         context: context,

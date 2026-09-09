@@ -44,10 +44,11 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: '/pdf-viewer',
       builder: (context, state) {
-        final Map<String, dynamic> extra = state.extra as Map<String, dynamic>;
+        final extra = state.extra as Map<String, dynamic>?;
+        if (extra == null) return const DashboardScreen();
         return PDFViewerScreen(
-          path: extra['path'] as String,
-          fileName: extra['fileName'] as String,
+          path: extra['path'] as String? ?? '',
+          fileName: extra['fileName'] as String? ?? 'Document',
         );
       },
     ),

@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as p;
 
 import '../providers/file_provider.dart';
 import '../services/recent_files_service.dart';
@@ -37,12 +38,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _pickPDF() async {
     try {
-      final path = await context.read<FileProvider>().pickPDF();
-      if (path != null && mounted) {
+      final provider = context.read<FileProvider>();
+      final path = await provider.pickPDF();
+      if (!mounted) return;
+      if (path != null) {
         context.push('/pdf-viewer', extra: {
           'path': path,
-          'fileName': path.split('/').last,
-        }).then((_) => context.read<FileProvider>().loadRecentFiles());
+          'fileName': p.basename(path),
+        }).then((_) {
+          if (mounted) context.read<FileProvider>().loadRecentFiles();
+        });
       }
     } catch (e) {
       _showErrorSnackBar('Error picking file: ${e.toString()}');
@@ -51,12 +56,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _handleScan() async {
     try {
-      final path = await context.read<FileProvider>().scanDocument();
-      if (path != null && mounted) {
+      final provider = context.read<FileProvider>();
+      final path = await provider.scanDocument();
+      if (!mounted) return;
+      if (path != null) {
         context.push('/pdf-viewer', extra: {
           'path': path,
-          'fileName': path.split('/').last,
-        }).then((_) => context.read<FileProvider>().loadRecentFiles());
+          'fileName': p.basename(path),
+        }).then((_) {
+          if (mounted) context.read<FileProvider>().loadRecentFiles();
+        });
       }
     } catch (e) {
       _showErrorSnackBar('Error scanning: ${e.toString()}');
@@ -189,7 +198,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: QuickActionsRow(
                       onAction: (label) {
                         if (label == 'Scan') _handleScan();
-                        if (label == 'Merge') context.push('/merge').then((_) => context.read<FileProvider>().loadRecentFiles());
+                        if (label == 'Merge') {
+                          context.push('/merge').then((_) {
+                            if (mounted) context.read<FileProvider>().loadRecentFiles();
+                          });
+                        }
                         if (label == 'Smart AI') context.push('/ai-chat');
                       },
                     ),
@@ -200,7 +213,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   sliver: SliverToBoxAdapter(
                     child: SectionHeader(
                       title: 'Recent Documents',
-                      onSeeAll: () => context.push('/library').then((_) => context.read<FileProvider>().loadRecentFiles()),
+                      onSeeAll: () => context.push('/library').then((_) {
+                        if (mounted) context.read<FileProvider>().loadRecentFiles();
+                      }),
                     ),
                   ),
                 ),
@@ -226,7 +241,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               onTap: () => context.push('/pdf-viewer', extra: {
                                 'path': file.path,
                                 'fileName': file.name,
-                              }).then((_) => provider.loadRecentFiles()),
+                              }).then((_) {
+                                if (mounted) provider.loadRecentFiles();
+                              }),
                               onMore: () => _showFileOptions(file),
                             );
                           },
