@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,9 +8,13 @@ import 'package:share_plus/share_plus.dart';
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
 
 import '../services/recent_files_service.dart';
 import '../services/pdf_ai_service.dart';
+import '../services/document_settings_service.dart';
+import '../services/pdf_tts_service.dart';
+import '../services/pdf_search_service.dart';
 
 class PDFViewerScreen extends StatefulWidget {
   final String path;
@@ -24,20 +29,64 @@ class PDFViewerScreen extends StatefulWidget {
 class _PDFViewerScreenState extends State<PDFViewerScreen> {
   int _totalPages = 0;
   int _currentPage = 0;
+  int _initialPage = 0;
   bool _pdfReady = false;
   PDFViewController? _pdfViewController;
   bool _showControls = true;
   bool _isNightMode = false;
   double _brightness = 0.7;
+  List<int> _bookmarks = [];
 
   // Search related
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  List<int> _searchResults = [];
+  int _currentSearchResultIndex = -1;
+  bool _isSearchingLoading = false;
+
+  // TTS related
+  final PdfTtsService _ttsService = PdfTtsService();
+  bool _isTtsActive = false;
+  double _ttsSpeed = 1.0;
+  final ValueNotifier<String> _currentWordNotifier = ValueNotifier<String>('');
+  
+  // Page save debouncing
+  Timer? _savePageTimer;
 
   @override
   void initState() {
     super.initState();
+    _loadDocumentSettings();
     _saveToRecents();
+    _setupTts();
+  }
+
+  void _setupTts() {
+    _ttsService.onStateChanged = (state) {
+      if (mounted) setState(() {});
+    };
+    _ttsService.onProgress = (start, end, word) {
+      _currentWordNotifier.value = word;
+    };
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _savePageTimer?.cancel();
+    _currentWordNotifier.dispose();
+    _ttsService.stop();
+    super.dispose();
+  }
+
+  Future<void> _loadDocumentSettings() async {
+    final lastPage = DocumentSettingsService.getLastReadPage(widget.path);
+    final bookmarks = DocumentSettingsService.getBookmarks(widget.path);
+    setState(() {
+      _initialPage = lastPage;
+      _currentPage = lastPage;
+      _bookmarks = bookmarks;
+    });
   }
 
   Future<void> _saveToRecents() async {
@@ -58,14 +107,115 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
     }
   }
 
+  void _toggleTtsPlayer() {
+    setState(() {
+      _isTtsActive = !_isTtsActive;
+    });
+    if (!_isTtsActive) {
+      _ttsService.stop();
+    }
+  }
+
+  Future<void> _startSpeaking() async {
+    try {
+      final service = PdfAiService(apiKey: ''); 
+      final text = await service.extractTextFromPage(widget.path, _currentPage);
+      if (text.trim().isNotEmpty) {
+        await _ttsService.speak(text);
+      } else {
+        _showError('No readable text found on this page.');
+      }
+    } catch (e) {
+      _showError('Error extracting text: ${e.toString()}');
+    }
+  }
+
+  void _changeTtsSpeed() {
+    setState(() {
+      if (_ttsSpeed == 1.0) {
+        _ttsSpeed = 1.25;
+      } else if (_ttsSpeed == 1.25) {
+        _ttsSpeed = 1.5;
+      } else {
+        _ttsSpeed = 1.0;
+      }
+    });
+    _ttsService.setSpeechRate(_ttsSpeed / 2);
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) return;
+    
+    setState(() {
+      _isSearchingLoading = true;
+      _searchResults = [];
+      _currentSearchResultIndex = -1;
+    });
+
+    final results = await PdfSearchService.searchKeyword(widget.path, query);
+
+    if (mounted) {
+      setState(() {
+        _searchResults = results;
+        _isSearchingLoading = false;
+        if (_searchResults.isNotEmpty) {
+          _currentSearchResultIndex = 0;
+          _pdfViewController?.setPage(_searchResults[0]);
+        }
+      });
+      
+      if (_searchResults.isEmpty) {
+        _showError('No matches found for "$query"');
+      }
+    }
+  }
+
+  void _goToNextSearchResult() {
+    if (_searchResults.isEmpty) return;
+    setState(() {
+      _currentSearchResultIndex = (_currentSearchResultIndex + 1) % _searchResults.length;
+      _pdfViewController?.setPage(_searchResults[_currentSearchResultIndex]);
+    });
+  }
+
+  void _goToPreviousSearchResult() {
+    if (_searchResults.isEmpty) return;
+    setState(() {
+      _currentSearchResultIndex = (_currentSearchResultIndex - 1 + _searchResults.length) % _searchResults.length;
+      _pdfViewController?.setPage(_searchResults[_currentSearchResultIndex]);
+    });
+  }
+
   void _toggleControls() {
     setState(() {
       _showControls = !_showControls;
     });
   }
 
+  Future<void> _toggleBookmark() async {
+    if (_bookmarks.contains(_currentPage)) {
+      await DocumentSettingsService.removeBookmark(widget.path, _currentPage);
+      setState(() {
+        _bookmarks.remove(_currentPage);
+      });
+    } else {
+      await DocumentSettingsService.addBookmark(widget.path, _currentPage);
+      setState(() {
+        _bookmarks.add(_currentPage);
+        _bookmarks.sort();
+      });
+    }
+  }
+
+  void _savePageWithDebounce(int page) {
+    _savePageTimer?.cancel();
+    _savePageTimer = Timer(const Duration(milliseconds: 500), () {
+      DocumentSettingsService.saveLastReadPage(widget.path, page);
+    });
+  }
+
   void _showError(String message) {
-    if (!mounted) return;
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -78,7 +228,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
   void _showSummarySheet() async {
     final prefs = await SharedPreferences.getInstance();
     final apiKey = prefs.getString('gemini_api_key');
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     if (apiKey == null || apiKey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -117,7 +267,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
           opacity: _showControls ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 300),
           child: AppBar(
-            backgroundColor: colorScheme.surface.withOpacity(0.7),
+            backgroundColor: colorScheme.surface.withValues(alpha: 0.7),
             flexibleSpace: ClipRect(
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
@@ -133,20 +283,71 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
                     hintText: 'Search...',
                     border: InputBorder.none,
                   ),
-                  onSubmitted: (value) {
-                    // Actual search logic depends on the PDF library's capabilities.
-                    // For now, we'll show a message that it's searching.
-                    _showError('Searching for "$value"... (Indexing PDF)');
+                  onSubmitted: (value) => _performSearch(value),
+                  onChanged: (value) {
+                    if (value.isEmpty && _searchResults.isNotEmpty) {
+                      setState(() {
+                        _searchResults = [];
+                        _currentSearchResultIndex = -1;
+                      });
+                    }
                   },
                 )
               : Text(widget.fileName, style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w700)),
             actions: [
               if (_isSearching) ...[
-                IconButton(icon: const Icon(Icons.close), onPressed: () => setState(() => _isSearching = false)),
+                if (_isSearchingLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    ),
+                  ),
+                if (_searchResults.isNotEmpty) ...[
+                  Center(
+                    child: Text(
+                      '${_currentSearchResultIndex + 1} / ${_searchResults.length}',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w600, color: colorScheme.primary),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left_rounded),
+                    onPressed: _goToPreviousSearchResult,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right_rounded),
+                    onPressed: _goToNextSearchResult,
+                  ),
+                ],
+                IconButton(
+                  icon: const Icon(Icons.close_rounded), 
+                  onPressed: () => setState(() {
+                    _isSearching = false;
+                    _searchResults = [];
+                    _currentSearchResultIndex = -1;
+                    _searchController.clear();
+                  }),
+                ),
               ] else ...[
+                IconButton(
+                  icon: Icon(
+                    _bookmarks.contains(_currentPage) 
+                        ? Icons.bookmark_rounded 
+                        : Icons.bookmark_border_rounded,
+                    color: _bookmarks.contains(_currentPage) ? colorScheme.primary : null,
+                  ),
+                  onPressed: _toggleBookmark,
+                ),
                 IconButton(
                   icon: const Icon(Icons.search_rounded), 
                   onPressed: () => setState(() => _isSearching = true),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.headphones_rounded,
+                    color: _ttsService.state != TtsState.stopped ? colorScheme.primary : null,
+                  ),
+                  onPressed: _toggleTtsPlayer,
                 ),
                 IconButton(
                   icon: const Icon(Icons.more_vert_rounded), 
@@ -168,7 +369,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
               autoSpacing: true,
               pageFling: true,
               pageSnap: true,
-              defaultPage: 0,
+              defaultPage: _initialPage,
               fitPolicy: FitPolicy.WIDTH,
               nightMode: effectiveNightMode,
               onRender: (pages) => setState(() {
@@ -177,12 +378,14 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
               }),
               onViewCreated: (controller) => _pdfViewController = controller,
               onPageChanged: (page, total) {
-                if (page != null) setState(() => _currentPage = page);
+                if (page != null) {
+                  setState(() => _currentPage = page);
+                  _savePageWithDebounce(page);
+                }
               },
               onError: (error) => _showError('Error loading PDF: ${error.toString()}'),
             ),
             
-            // Brightness Overlay
             IgnorePointer(
               child: Container(
                 color: Colors.black.withValues(alpha: (1.0 - _brightness).clamp(0.0, 0.8)),
@@ -206,6 +409,28 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
                 onSettingsTap: () => _showSettings(context),
               ),
             ),
+
+            if (_isTtsActive)
+              Positioned(
+                bottom: _showControls ? 100 : 20,
+                left: 20,
+                right: 20,
+                child: _TtsPlayer(
+                  state: _ttsService.state,
+                  speed: _ttsSpeed,
+                  currentWordNotifier: _currentWordNotifier,
+                  onPlayPause: () {
+                    if (_ttsService.state == TtsState.playing) {
+                      _ttsService.pause();
+                    } else {
+                      _startSpeaking();
+                    }
+                  },
+                  onStop: () => _ttsService.stop(),
+                  onSpeedChange: _changeTtsSpeed,
+                  onClose: () => setState(() => _isTtsActive = false),
+                ),
+              ),
           ],
         ),
       ),
@@ -233,6 +458,57 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _showSummarySheet();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.quiz_rounded, color: Colors.orangeAccent),
+              title: const Text('Generate AI Quiz'),
+              onTap: () async {
+                Navigator.pop(context);
+                final prefs = await SharedPreferences.getInstance();
+                final apiKey = prefs.getString('gemini_api_key');
+                if (!context.mounted) return;
+                if (apiKey == null || apiKey.isEmpty) {
+                  _showError('Set your Gemini API key in AI Chat settings first.');
+                  return;
+                }
+                context.push('/ai-study', extra: {
+                  'path': widget.path,
+                  'fileName': widget.fileName,
+                  'apiKey': apiKey,
+                  'mode': 'quiz',
+                });
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.spoke_rounded, color: Colors.blueAccent),
+              title: const Text('Generate Flashcards'),
+              onTap: () async {
+                Navigator.pop(context);
+                final prefs = await SharedPreferences.getInstance();
+                final apiKey = prefs.getString('gemini_api_key');
+                if (!context.mounted) return;
+                if (apiKey == null || apiKey.isEmpty) {
+                  _showError('Set your Gemini API key in AI Chat settings first.');
+                  return;
+                }
+                context.push('/ai-study', extra: {
+                  'path': widget.path,
+                  'fileName': widget.fileName,
+                  'apiKey': apiKey,
+                  'mode': 'flashcards',
+                });
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.drive_file_rename_outline_rounded, color: colorScheme.primary),
+              title: const Text('Sign Document'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/signature', extra: {
+                  'path': widget.path,
+                  'fileName': widget.fileName,
+                });
               },
             ),
             ListTile(
@@ -274,7 +550,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
     try {
       final file = File(widget.path);
       final size = "${(await file.length() / (1024 * 1024)).toStringAsFixed(2)} MB";
-      if (!mounted) return;
+      if (!context.mounted) return;
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
@@ -319,7 +595,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurface.withOpacity(0.1), borderRadius: BorderRadius.circular(2))),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.onSurface.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(2))),
               const SizedBox(height: 16),
               Text('Page Overview', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
@@ -335,6 +611,7 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
                   itemCount: _totalPages,
                   itemBuilder: (context, index) {
                     final isCurrent = index == _currentPage;
+                    final isBookmarked = _bookmarks.contains(index);
                     return GestureDetector(
                       onTap: () {
                         _pdfViewController?.setPage(index);
@@ -342,12 +619,22 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
                       },
                       child: Container(
                         decoration: BoxDecoration(
-                          color: isCurrent ? colorScheme.primary.withOpacity(0.1) : colorScheme.surfaceContainerLow,
+                          color: isCurrent ? colorScheme.primary.withValues(alpha: 0.1) : colorScheme.surfaceContainerLow,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: isCurrent ? colorScheme.primary : Colors.transparent),
+                          border: Border.all(color: isCurrent ? colorScheme.primary : (isBookmarked ? colorScheme.secondary.withValues(alpha: 0.5) : Colors.transparent)),
                         ),
-                        child: Center(
-                          child: Text('${index + 1}', style: TextStyle(color: isCurrent ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.5))),
+                        child: Stack(
+                          children: [
+                            Center(
+                              child: Text('${index + 1}', style: TextStyle(color: isCurrent ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.5))),
+                            ),
+                            if (isBookmarked)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: Icon(Icons.bookmark_rounded, size: 16, color: colorScheme.secondary),
+                              ),
+                          ],
                         ),
                       ),
                     );
@@ -385,6 +672,111 @@ class _PDFViewerScreenState extends State<PDFViewerScreen> {
   }
 }
 
+class _TtsPlayer extends StatelessWidget {
+  final TtsState state;
+  final double speed;
+  final ValueNotifier<String> currentWordNotifier;
+  final VoidCallback onPlayPause;
+  final VoidCallback onStop;
+  final VoidCallback onSpeedChange;
+  final VoidCallback onClose;
+
+  const _TtsPlayer({
+    required this.state,
+    required this.speed,
+    required this.currentWordNotifier,
+    required this.onPlayPause,
+    required this.onStop,
+    required this.onSpeedChange,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.record_voice_over_rounded, size: 20, color: colorScheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ValueListenableBuilder<String>(
+                  valueListenable: currentWordNotifier,
+                  builder: (context, word, child) {
+                    return Text(
+                      state == TtsState.playing ? 'Reading: $word' : 'Ready to read',
+                      style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    );
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 20),
+                onPressed: onClose,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const Divider(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              TextButton(
+                onPressed: onSpeedChange,
+                child: Text(
+                  '${speed}x',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w800,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: Icon(
+                  state == TtsState.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  size: 32,
+                  color: colorScheme.primary,
+                ),
+                onPressed: onPlayPause,
+              ),
+              IconButton(
+                icon: const Icon(Icons.stop_rounded, size: 32, color: Colors.redAccent),
+                onPressed: onStop,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReaderControls extends StatelessWidget {
   final int currentPage;
   final int totalPages;
@@ -411,10 +803,10 @@ class _ReaderControls extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: colorScheme.surface.withOpacity(0.8),
+            color: colorScheme.surface.withValues(alpha: 0.8),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: colorScheme.onSurface.withOpacity(0.1),
+              color: colorScheme.onSurface.withValues(alpha: 0.1),
               width: 0.5,
             ),
           ),
@@ -429,7 +821,7 @@ class _ReaderControls extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: colorScheme.primary.withOpacity(0.1),
+                  color: colorScheme.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -488,7 +880,7 @@ class ReaderSettingsSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: colorScheme.onSurface.withOpacity(0.1),
+                color: colorScheme.onSurface.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -569,11 +961,11 @@ class _SettingToggle extends StatelessWidget {
               color: isSelected ? colorScheme.primary : colorScheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: isSelected ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.05),
+                color: isSelected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.05),
                 width: 2,
               ),
             ),
-            child: Icon(icon, color: isSelected ? Colors.white : colorScheme.onSurface.withOpacity(0.5)),
+            child: Icon(icon, color: isSelected ? Colors.white : colorScheme.onSurface.withValues(alpha: 0.5)),
           ),
           const SizedBox(height: 8),
           Text(
@@ -581,7 +973,7 @@ class _SettingToggle extends StatelessWidget {
             style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: isSelected ? colorScheme.primary : colorScheme.onSurface.withOpacity(0.6),
+              color: isSelected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
         ],
@@ -641,7 +1033,7 @@ class _SummarySheetState extends State<_SummarySheet> {
             Center(
               child: Container(width: 40, height: 4,
                 decoration: BoxDecoration(
-                  color: colorScheme.onSurface.withOpacity(0.15),
+                  color: colorScheme.onSurface.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(2))),
             ),
             const SizedBox(height: 20),
@@ -649,7 +1041,7 @@ class _SummarySheetState extends State<_SummarySheet> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.purpleAccent.withOpacity(0.1),
+                  color: Colors.purpleAccent.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(Icons.auto_awesome_rounded, color: Colors.purpleAccent, size: 20),
@@ -659,7 +1051,7 @@ class _SummarySheetState extends State<_SummarySheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('AI Summary', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w800)),
-                  Text(widget.fileName, style: GoogleFonts.plusJakartaSans(fontSize: 11, color: colorScheme.onSurface.withOpacity(0.5)), overflow: TextOverflow.ellipsis),
+                  Text(widget.fileName, style: GoogleFonts.plusJakartaSans(fontSize: 11, color: colorScheme.onSurface.withValues(alpha: 0.5)), overflow: TextOverflow.ellipsis),
                 ],
               )),
             ]),
@@ -671,9 +1063,9 @@ class _SummarySheetState extends State<_SummarySheet> {
                 ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     const CircularProgressIndicator(color: Colors.purpleAccent),
                     const SizedBox(height: 16),
-                    Text('Analyzing document...', style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withOpacity(0.5))),
+                    Text('Analyzing document...', style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withValues(alpha: 0.5))),
                     const SizedBox(height: 8),
-                    Text('This may take a few seconds', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: colorScheme.onSurface.withOpacity(0.3))),
+                    Text('This may take a few seconds', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: colorScheme.onSurface.withValues(alpha: 0.3))),
                   ]))
                 : _error != null
                   ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -683,7 +1075,7 @@ class _SummarySheetState extends State<_SummarySheet> {
                     ]))
                   : SingleChildScrollView(
                       controller: controller,
-                      child: Text(_summary!, style: GoogleFonts.plusJakartaSans(fontSize: 14, height: 1.8, color: colorScheme.onSurface.withOpacity(0.85))),
+                      child: Text(_summary!, style: GoogleFonts.plusJakartaSans(fontSize: 14, height: 1.8, color: colorScheme.onSurface.withValues(alpha: 0.85))),
                     ),
             ),
           ],

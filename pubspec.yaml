@@ -16,6 +16,10 @@ dependencies:
   # Navigation
   go_router: ^14.2.0
 
+  # Local Storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
   # iOS style icons
   cupertino_icons: ^1.0.6
 
@@ -45,12 +49,18 @@ dependencies:
   intl: ^0.19.0
   path: ^1.9.0
   syncfusion_flutter_pdf: ^27.1.48
+  flutter_tts: 4.2.1
+  signature: ^5.5.0
+  confetti: ^0.7.0
+  flip_card: ^0.6.0
+  local_auth: ^2.3.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   flutter_lints: ^3.0.1
+  hive_test: ^1.0.1
 
 flutter:
   uses-material-design: true

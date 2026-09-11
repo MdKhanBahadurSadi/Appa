@@ -1,10 +1,10 @@
 import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter/foundation.dart';
 import '../services/recent_files_service.dart';
 
 class FileProvider extends ChangeNotifier {
@@ -67,22 +67,27 @@ class FileProvider extends ChangeNotifier {
     try {
       List<String>? pictures = await CunningDocumentScanner.getPictures();
       if (pictures != null && pictures.isNotEmpty) {
-        final pdf = pw.Document();
-        for (final picture in pictures) {
-          final image = pw.MemoryImage(File(picture).readAsBytesSync());
-          pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Image(image))));
-        }
+        _isLoading = true;
+        notifyListeners();
 
         final output = await getApplicationDocumentsDirectory();
         final fileName = "Scan_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf";
-        final file = File("${output.path}/$fileName");
-        await file.writeAsBytes(await pdf.save());
+        final filePath = "${output.path}/$fileName";
+        
+        // Heavy PDF generation moved to a background isolate using compute
+        await compute(_generatePdfFromImages, {
+          'pictures': pictures,
+          'outputPath': filePath,
+        });
         
         await loadRecentFiles();
-        return file.path;
+        return filePath;
       }
     } catch (e) {
-      throw Exception('Failed to scan document: $e');
+      debugPrint('Error scanning document: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
     return null;
   }
@@ -96,4 +101,22 @@ class FileProvider extends ChangeNotifier {
     await RecentFilesService.pinToTop(path);
     await loadRecentFiles();
   }
+}
+
+/// Helper function for compute to generate PDF in background
+Future<void> _generatePdfFromImages(Map<String, dynamic> params) async {
+  final List<String> pictures = params['pictures'];
+  final String outputPath = params['outputPath'];
+  
+  final pdf = pw.Document();
+  for (final picture in pictures) {
+    final file = File(picture);
+    if (file.existsSync()) {
+      final image = pw.MemoryImage(file.readAsBytesSync());
+      pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Image(image))));
+    }
+  }
+  
+  final file = File(outputPath);
+  await file.writeAsBytes(await pdf.save());
 }

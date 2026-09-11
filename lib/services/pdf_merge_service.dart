@@ -10,35 +10,48 @@ class PdfMergeService {
     try {
       if (paths.isEmpty) return null;
 
-      final PdfDocument finalDoc = PdfDocument();
-
+      // Read all files into bytes first on the main isolate (async)
+      List<List<int>> allBytes = [];
       for (final path in paths) {
         final file = File(path);
         if (await file.exists()) {
-          final List<int> bytes = await file.readAsBytes();
-          final PdfDocument sourceDoc = PdfDocument(inputBytes: bytes);
-          for (int i = 0; i < sourceDoc.pages.count; i++) {
-            final PdfPage sourcePage = sourceDoc.pages[i];
-            final PdfTemplate template = sourcePage.createTemplate();
-            final PdfPage page = finalDoc.pages.add();
-            page.graphics.drawPdfTemplate(template, const Offset(0, 0));
-          }
-          sourceDoc.dispose();
+          allBytes.add(await file.readAsBytes());
         }
       }
 
-      final List<int> bytes = await finalDoc.save();
-      finalDoc.dispose();
+      if (allBytes.isEmpty) return null;
+
+      // Perform heavy merging in a background isolate
+      final List<int> mergedBytes = await compute(_mergeTask, allBytes);
 
       final directory = await getApplicationDocumentsDirectory();
       final String fileName = 'merged_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final File outputFile = File(p.join(directory.path, fileName));
       
-      await outputFile.writeAsBytes(bytes);
+      await outputFile.writeAsBytes(mergedBytes);
       return outputFile.path;
     } catch (e) {
       debugPrint("Error merging PDFs: $e");
       return null;
     }
+  }
+
+  static List<int> _mergeTask(List<List<int>> allBytes) {
+    final PdfDocument finalDoc = PdfDocument();
+
+    for (final bytes in allBytes) {
+      final PdfDocument sourceDoc = PdfDocument(inputBytes: bytes);
+      for (int i = 0; i < sourceDoc.pages.count; i++) {
+        final PdfPage sourcePage = sourceDoc.pages[i];
+        final PdfTemplate template = sourcePage.createTemplate();
+        final PdfPage page = finalDoc.pages.add();
+        page.graphics.drawPdfTemplate(template, const Offset(0, 0));
+      }
+      sourceDoc.dispose();
+    }
+
+    final List<int> result = finalDoc.saveSync();
+    finalDoc.dispose();
+    return result;
   }
 }

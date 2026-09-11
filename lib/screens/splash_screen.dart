@@ -41,7 +41,7 @@ class _SplashScreenState extends State<SplashScreen> {
               height: 300,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: colorScheme.primary.withOpacity(0.05),
+                color: colorScheme.primary.withValues(alpha: 0.05),
               ),
             ).animate().scale(duration: 2.seconds, curve: Curves.easeInOut),
           ),
@@ -53,9 +53,9 @@ class _SplashScreenState extends State<SplashScreen> {
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: colorScheme.primary.withOpacity(0.1),
+                    color: colorScheme.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(40),
-                    border: Border.all(color: colorScheme.primary.withOpacity(0.2)),
+                    border: Border.all(color: colorScheme.primary.withValues(alpha: 0.2)),
                   ),
                   child: Image.asset(
                     'assets/app.png',
@@ -89,7 +89,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   'Smart Reading Experience',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
-                    color: colorScheme.onSurface.withOpacity(0.5),
+                    color: colorScheme.onSurface.withValues(alpha: 0.5),
                     fontWeight: FontWeight.w500,
                     letterSpacing: 1.5,
                   ),
@@ -107,7 +107,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 width: 40,
                 height: 2,
                 child: LinearProgressIndicator(
-                  backgroundColor: colorScheme.primary.withOpacity(0.1),
+                  backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
                   valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
                 ),
               ),

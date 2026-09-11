@@ -108,6 +108,19 @@ To use the AI assistant:
 
 ---
 
+## ⚡ Performance & Architecture
+
+* 🏗 **Clean Architecture**
+  Decoupled services for AI, PDF tools, and document settings.
+
+* 🚀 **Multi-threaded Processing (Isolates)**
+  Heavy PDF operations like text extraction and merging are offloaded to **Dart Isolates** using `compute()`, ensuring a butter-smooth 120 FPS UI even during intensive tasks.
+
+* 🧪 **Automated Testing**
+  Core services like `RecentFilesService` and `DocumentSettingsService` are covered with comprehensive unit tests to ensure reliability and prevent regressions.
+
+---
+
 ## 📂 Project Structure
 
 ```

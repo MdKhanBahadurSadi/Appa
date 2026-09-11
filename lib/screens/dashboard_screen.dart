@@ -5,9 +5,11 @@ import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/file_provider.dart';
 import '../services/recent_files_service.dart';
+import '../services/vault_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -23,7 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<FileProvider>().loadRecentFiles();
+      if (context.mounted) context.read<FileProvider>().loadRecentFiles();
     });
     _searchController.addListener(() {
       context.read<FileProvider>().searchFiles(_searchController.text);
@@ -72,6 +74,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  Future<void> _pickPDFForStudy() async {
+    try {
+      final provider = context.read<FileProvider>();
+      final path = await provider.pickPDF();
+      if (!mounted) return;
+      if (path != null) {
+        final prefs = await SharedPreferences.getInstance();
+        final apiKey = prefs.getString('gemini_api_key');
+        if (!mounted) return;
+        if (apiKey == null || apiKey.isEmpty) {
+          _showErrorSnackBar('Set your Gemini API key in AI Chat settings first.');
+          return;
+        }
+        
+        showModalBottomSheet(
+          context: context,
+          builder: (context) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.quiz_rounded, color: Colors.orangeAccent),
+                title: const Text('Generate AI Quiz'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/ai-study', extra: {
+                    'path': path,
+                    'fileName': p.basename(path),
+                    'apiKey': apiKey,
+                    'mode': 'quiz',
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.spoke_rounded, color: Colors.blueAccent),
+                title: const Text('Generate AI Flashcards'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/ai-study', extra: {
+                    'path': path,
+                    'fileName': p.basename(path),
+                    'apiKey': apiKey,
+                    'mode': 'flashcards',
+                  });
+                },
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error picking file: ${e.toString()}');
+    }
+  }
+
+  void _handleQuickAction(String label) {
+    if (label == 'Scan') _handleScan();
+    if (label == 'Merge') {
+      context.push('/merge').then((_) {
+        if (mounted) context.read<FileProvider>().loadRecentFiles();
+      });
+    }
+    if (label == 'Smart AI') context.push('/ai-chat');
+    if (label == 'Study') _pickPDFForStudy();
+    if (label == 'Tools') context.push('/tools');
+    if (label == 'Vault') context.push('/vault');
+  }
+
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -114,6 +183,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.quiz_rounded, color: Colors.orangeAccent),
+              title: const Text('Generate AI Quiz'),
+              onTap: () async {
+                Navigator.pop(context);
+                final prefs = await SharedPreferences.getInstance();
+                final apiKey = prefs.getString('gemini_api_key');
+                if (!context.mounted) return;
+                if (apiKey == null || apiKey.isEmpty) {
+                  _showErrorSnackBar('Set your Gemini API key in AI Chat settings first.');
+                  return;
+                }
+                context.push('/ai-study', extra: {
+                  'path': file.path,
+                  'fileName': file.name,
+                  'apiKey': apiKey,
+                  'mode': 'quiz',
+                });
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.spoke_rounded, color: Colors.blueAccent),
+              title: const Text('Generate AI Flashcards'),
+              onTap: () async {
+                Navigator.pop(context);
+                final prefs = await SharedPreferences.getInstance();
+                final apiKey = prefs.getString('gemini_api_key');
+                if (!context.mounted) return;
+                if (apiKey == null || apiKey.isEmpty) {
+                  _showErrorSnackBar('Set your Gemini API key in AI Chat settings first.');
+                  return;
+                }
+                context.push('/ai-study', extra: {
+                  'path': file.path,
+                  'fileName': file.name,
+                  'apiKey': apiKey,
+                  'mode': 'flashcards',
+                });
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.info_outline_rounded, color: Colors.orangeAccent),
               title: const Text('File Info'),
               onTap: () {
@@ -127,6 +236,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onTap: () async {
                 Navigator.pop(context);
                 await context.read<FileProvider>().pinFile(file.path);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.security_rounded, color: Colors.blueAccent),
+              title: const Text('Move to Secure Vault'),
+              onTap: () async {
+                Navigator.pop(context);
+                await VaultService.moveToVault(file.path);
+                if (!context.mounted) return;
+                await context.read<FileProvider>().removeFile(file.path);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('File moved to Secure Vault')),
+                );
               },
             ),
           ],
@@ -180,8 +302,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          Positioned(top: -50, right: -50, child: _AnimatedGlow(color: colorScheme.primary.withOpacity(0.12))),
-          Positioned(bottom: 100, left: -80, child: _AnimatedGlow(color: colorScheme.secondary.withOpacity(0.08))),
+          Positioned(top: -50, right: -50, child: _AnimatedGlow(color: colorScheme.primary.withValues(alpha: 0.12))),
+          Positioned(bottom: 100, left: -80, child: _AnimatedGlow(color: colorScheme.secondary.withValues(alpha: 0.08))),
           
           SafeArea(
             child: CustomScrollView(
@@ -196,15 +318,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
                   sliver: SliverToBoxAdapter(
                     child: QuickActionsRow(
-                      onAction: (label) {
-                        if (label == 'Scan') _handleScan();
-                        if (label == 'Merge') {
-                          context.push('/merge').then((_) {
-                            if (mounted) context.read<FileProvider>().loadRecentFiles();
-                          });
-                        }
-                        if (label == 'Smart AI') context.push('/ai-chat');
-                      },
+                      onAction: _handleQuickAction,
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    child: GestureDetector(
+                      onTap: () => context.push('/vault'),
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [colorScheme.primary, colorScheme.secondary],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.primary.withValues(alpha: 0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.security_rounded, color: Colors.white, size: 28),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Secure Vault', style: GoogleFonts.plusJakartaSans(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                  Text('Protect your private documents', style: GoogleFonts.plusJakartaSans(color: Colors.white.withValues(alpha: 0.8), fontSize: 12)),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -214,7 +377,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: SectionHeader(
                       title: 'Recent Documents',
                       onSeeAll: () => context.push('/library').then((_) {
-                        if (mounted) context.read<FileProvider>().loadRecentFiles();
+                        if (context.mounted) context.read<FileProvider>().loadRecentFiles();
                       }),
                     ),
                   ),
@@ -305,7 +468,7 @@ class DashboardHeader extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Good Morning', style: GoogleFonts.plusJakartaSans(fontSize: 14, color: colorScheme.onSurface.withOpacity(0.5), fontWeight: FontWeight.w500, letterSpacing: 1.2)),
+                  Text('Good Morning', style: GoogleFonts.plusJakartaSans(fontSize: 14, color: colorScheme.onSurface.withValues(alpha: 0.5), fontWeight: FontWeight.w500, letterSpacing: 1.2)),
                   const SizedBox(height: 4),
                   Text('Discover Your Files', style: GoogleFonts.plusJakartaSans(fontSize: 24, fontWeight: FontWeight.w800, color: colorScheme.onSurface)),
                 ],
@@ -324,7 +487,7 @@ class DashboardHeader extends StatelessWidget {
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: colorScheme.onSurface.withOpacity(0.05)),
+              border: Border.all(color: colorScheme.onSurface.withValues(alpha: 0.05)),
             ),
             child: Row(
               children: [
@@ -335,7 +498,7 @@ class DashboardHeader extends StatelessWidget {
                     controller: searchController,
                     decoration: InputDecoration(
                       hintText: 'Search files...',
-                      hintStyle: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withOpacity(0.24), fontSize: 15),
+                      hintStyle: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withValues(alpha: 0.24), fontSize: 15),
                       border: InputBorder.none,
                     ),
                     style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface, fontSize: 15),
@@ -361,8 +524,8 @@ class QuickActionsRow extends StatelessWidget {
       children: [
         _QuickAction(icon: Icons.qr_code_scanner_rounded, label: 'Scan', color: Colors.blueAccent, onTap: () => onAction('Scan')),
         _QuickAction(icon: Icons.auto_awesome_rounded, label: 'Smart AI', color: Colors.purpleAccent, onTap: () => onAction('Smart AI')),
-        _QuickAction(icon: Icons.merge_type_rounded, label: 'Merge', color: Colors.orangeAccent, onTap: () => onAction('Merge')),
-        _QuickAction(icon: Icons.more_horiz_rounded, label: 'More', color: Colors.grey, onTap: () => onAction('More')),
+        _QuickAction(icon: Icons.school_rounded, label: 'Study', color: Colors.orangeAccent, onTap: () => onAction('Study')),
+        _QuickAction(icon: Icons.build_circle_rounded, label: 'Tools', color: Colors.greenAccent, onTap: () => onAction('Tools')),
       ],
     ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1);
   }
@@ -383,11 +546,11 @@ class _QuickAction extends StatelessWidget {
         children: [
           Container(
             width: 64, height: 64,
-            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withOpacity(0.2))),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withValues(alpha: 0.2))),
             child: Icon(icon, color: color, size: 26),
           ),
           const SizedBox(height: 8),
-          Text(label, style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7))),
+          Text(label, style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7))),
         ],
       ),
     );
@@ -429,7 +592,7 @@ class RecentFileCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerLow, 
         borderRadius: BorderRadius.circular(24), 
-        border: Border.all(color: colorScheme.onSurface.withOpacity(0.04))
+        border: Border.all(color: colorScheme.onSurface.withValues(alpha: 0.04))
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
@@ -440,7 +603,7 @@ class RecentFileCard extends StatelessWidget {
             children: [
               Container(
                 width: 52, height: 52,
-                decoration: BoxDecoration(color: Colors.redAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
+                decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
                 child: const Icon(Icons.picture_as_pdf_rounded, color: Colors.redAccent, size: 28),
               ),
               const SizedBox(width: 16),
@@ -450,11 +613,11 @@ class RecentFileCard extends StatelessWidget {
                   children: [
                     Text(file['name']!, style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, fontSize: 15, color: colorScheme.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
-                    Text('${file['date']} • ${file['size']}', style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withOpacity(0.5), fontSize: 12)),
+                    Text('${file['date']} • ${file['size']}', style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 12)),
                   ],
                 ),
               ),
-              IconButton(icon: Icon(Icons.more_horiz_rounded, color: colorScheme.onSurface.withOpacity(0.24)), onPressed: onMore),
+              IconButton(icon: Icon(Icons.more_horiz_rounded, color: colorScheme.onSurface.withValues(alpha: 0.24)), onPressed: onMore),
             ],
           ),
         ),

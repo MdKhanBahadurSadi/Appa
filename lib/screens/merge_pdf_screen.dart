@@ -39,7 +39,7 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
   }
 
   void _showError(String message) {
-    if (!mounted) return;
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -67,7 +67,7 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
 
       final file = File(mergedPath);
       final fileName = p.basename(mergedPath);
-      final size = (await file.length() / (1024 * 1024)).toStringAsFixed(2) + " MB";
+      final size = '${(await file.length() / (1024 * 1024)).toStringAsFixed(2)} MB';
       final date = DateFormat('MMM dd, yyyy').format(DateTime.now());
 
       await RecentFilesService.addRecentFile(RecentFile(
@@ -77,7 +77,7 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
         size: size,
       ));
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       context.pushReplacement('/pdf-viewer', extra: {
         'path': mergedPath,
         'fileName': fileName,
@@ -105,11 +105,11 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.merge_type_rounded, size: 80, color: colorScheme.primary.withOpacity(0.5)),
+                        Icon(Icons.merge_type_rounded, size: 80, color: colorScheme.primary.withValues(alpha: 0.5)),
                         const SizedBox(height: 16),
                         Text(
                           'No files selected',
-                          style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withOpacity(0.5), fontSize: 18),
+                          style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 18),
                         ),
                       ],
                     ),
@@ -134,9 +134,9 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
                         child: ListTile(
                           leading: const Icon(Icons.picture_as_pdf, color: Colors.redAccent),
                           title: Text(p.basename(file.path), style: TextStyle(color: colorScheme.onSurface)),
-                          subtitle: Text('${(file.lengthSync() / 1024).toStringAsFixed(1)} KB', style: TextStyle(color: colorScheme.onSurface.withOpacity(0.5))),
+                          subtitle: Text('${(file.lengthSync() / 1024).toStringAsFixed(1)} KB', style: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.5))),
                           trailing: IconButton(
-                            icon: Icon(Icons.close, color: colorScheme.onSurface.withOpacity(0.3)),
+                            icon: Icon(Icons.close, color: colorScheme.onSurface.withValues(alpha: 0.3)),
                             onPressed: () => setState(() => _selectedFiles.removeAt(index)),
                           ),
                         ),

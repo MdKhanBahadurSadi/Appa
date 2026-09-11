@@ -37,30 +37,36 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
   }
 
   Future<void> _loadFiles() async {
+    if (!context.mounted) return;
     setState(() => _isLoading = true);
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final List<FileSystemEntity> entities = await directory.list().toList();
-      final List<File> files = entities
-          .whereType<File>()
-          .where((file) => p.extension(file.path).toLowerCase() == '.pdf')
+      // Use a stream to list entities and filter them efficiently
+      final List<File> files = await directory
+          .list()
+          .where((entity) => entity is File && p.extension(entity.path).toLowerCase() == '.pdf')
+          .cast<File>()
           .toList();
 
       final Map<String, String> sizes = {};
-      for (var file in files) {
+      
+      // Calculate file sizes in parallel using Future.wait
+      await Future.wait(files.map((file) async {
         final length = await file.length();
         sizes[file.path] = (length / (1024 * 1024)).toStringAsFixed(2);
-      }
+      }));
       
-      setState(() {
-        _pdfFiles = files;
-        _filteredFiles = files;
-        _fileSizes = sizes;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _pdfFiles = files;
+          _filteredFiles = files;
+          _fileSizes = sizes;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint("Error loading files: $e");
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -134,7 +140,7 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
               ? Center(
                   child: Text(
                     'No documents found',
-                    style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withOpacity(0.5), fontSize: 18),
+                    style: GoogleFonts.plusJakartaSans(color: colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 18),
                   ),
                 )
               : GridView.builder(
@@ -175,7 +181,7 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
                           decoration: BoxDecoration(
                             color: colorScheme.surfaceContainerLow,
                             borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: colorScheme.onSurface.withOpacity(0.05)),
+                            border: Border.all(color: colorScheme.onSurface.withValues(alpha: 0.05)),
                           ),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -184,7 +190,7 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
                                 width: 64,
                                 height: 64,
                                 decoration: BoxDecoration(
-                                  color: Colors.redAccent.withOpacity(0.1),
+                                  color: Colors.redAccent.withValues(alpha: 0.1),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 32),
@@ -208,7 +214,7 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
                               Text(
                                 '$fileSize MB',
                                 style: GoogleFonts.plusJakartaSans(
-                                  color: colorScheme.onSurface.withOpacity(0.5),
+                                  color: colorScheme.onSurface.withValues(alpha: 0.5),
                                   fontSize: 12,
                                 ),
                               ),

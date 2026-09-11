@@ -19,5 +19,9 @@ void main() {
 
     // Verify that the SplashScreen is rendered by checking for the app name.
     expect(find.text('AppaPDF'), findsOneWidget);
+
+    // Advance time to trigger the splash screen navigation timer.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 100));
   });
 }
